@@ -8,7 +8,7 @@ close all;
 num_bits = 1e5;                                  % Number of bits to transmit
 mod_types = ['BPSK','QPSK','8PSK','16-QAM'];     % Modulation type
 
-mod_type='QPSK';
+mod_type='8PSK';
 
 % Example bits (24 bits for demonstration)
 bits = [0 0 1 0 1 1 0 0 0 0 1 0 1 1 0 0 0 0 1 0 1 1 0 0];
