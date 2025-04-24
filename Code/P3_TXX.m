@@ -1,26 +1,58 @@
-clear;
-clc;
-close all;
+clear; clc; close all;
 
+%--------Part 1----------
 % ========================
 % Simulation Parameters
 % ========================
-num_bits = 1e5;                                  % Number of bits to transmit
-mod_types = ['BPSK','QPSK','8PSK','16-QAM'];     % Modulation type
+bits_Num = 48;                                  % Number of bits to transmit
+mod_types = {'BPSK', 'QPSK', '8PSK', '16-QAM'}; % Cell array of modulation types
 
-mod_type='QPSK';
+% Generate random bits (same for all modulations for fair comparison)
+Tx_bits = randi([0 1], 1, bits_Num);
 
-% Example bits (24 bits for demonstration)
-bits = [0 0 1 0 1 1 0 0 0 0 1 0 1 1 0 0 0 0 1 0 1 1 0 0];
-
-% Mapping
-[tx_vector, qpsk_table] = mapper(bits, mod_type);
-disp(mod_type+ " Symbols:");
-disp(tx_vector);
-
-% Draw constellation
-drawConstellation(qpsk_table, mod_type);
-
+% Loop through all modulation types
+for mod_idx = 1:length(mod_types)
+    mod_type = mod_types{mod_idx};
+    
+    fprintf('\n=== Testing %s Modulation ===\n', mod_type);
+    
+    % ========================
+    % 1. Mapping (Modulation)
+    % ========================
+    [tx_symbols, constellation] = mapper(Tx_bits, mod_type);
+    
+    % ========================
+    % 2. Display Constellation
+    % ========================
+    drawConstellation(constellation, mod_type);
+    title(sprintf('%s Constellation', mod_type));
+    
+    % ========================
+    % 3. Add Channel Noise
+    % ========================
+    %rx_symbols = awgn(tx_symbols, SNR_dB, 'measured');
+    rx_symbols = tx_symbols;
+    % ========================
+    % 4. Demapping (Demodulation)
+    % ========================
+    Rx_bits = demapper(rx_symbols, mod_type);
+    
+    % ========================
+    % 5. Display Results
+    % ========================
+    % Calculate BER
+    [BER, bit_errors] = calculateBER(Tx_bits, Rx_bits);
+    
+    % Display input/output comparison
+    fprintf('Original bits:\n');
+    disp(reshape(Tx_bits, 16, [])'); % Display in 16-bit groups
+    
+    fprintf('Received bits:\n');
+    disp(reshape(Rx_bits(1:bits_Num), 16, [])'); % Display in 16-bit groups
+    
+    fprintf('Bit errors: %d\n', bit_errors);
+    fprintf('BER: %.2e\n\n', BER);
+end
 
 
 % ========================
@@ -60,7 +92,7 @@ function [Tx_Vector, Table] = mapper(bits, mod_type)
         case 'BFSK'
             error('BFSK requires time-domain implementation (see alternative)');
             
-        case '16QAM'
+        case '16-QAM'
             n = 4;
             M = 16;
             % 16-QAM with unit average power (normalized)
@@ -115,11 +147,14 @@ function drawConstellation(Table, mod_type)
     % =============================================
     % 1. Decision Visualization
     % =============================================
-     % Boundary lines approach
-     [vx, vy] = voronoi(points(:,1), points(:,2));
-     plot(vx, vy, 'k-', 'LineWidth', 1.5);
+    if length(Table) > 2  % Voronoi needs at least 3 points
+        [vx, vy] = voronoi(points(:,1), points(:,2));
+        plot(vx, vy, 'k-', 'LineWidth', 1.5);
+    else
+        % For BPSK, draw simple decision boundary
+        plot([0 0], ylim, 'k--', 'LineWidth', 1.5);
+    end
        
- 
    
     % =============================================
     % 2. Constellation Points
@@ -169,4 +204,72 @@ function drawConstellation(Table, mod_type)
     
     
     hold off;
+end
+
+function [received_bits] = demapper(received_symbols, mod_type)
+    % DEMAPPER Digital demodulation demapper
+    % Inputs:
+    %   received_symbols - Complex received symbols
+    %   mod_type        - Modulation type ('BPSK', 'QPSK', etc.)
+    % Output:
+    %   received_bits   - Demodulated bit stream
+    
+    % Get constellation table from mapper
+    [~, Table] = mapper([1], mod_type);
+    
+    % Determine bits per symbol
+    switch upper(mod_type)
+        case 'BPSK'
+            n = 1;
+        case 'QPSK'
+            n = 2;
+        case '8PSK'
+            n = 3;
+        case {'16QAM', '16-QAM'}
+            n = 4;
+        otherwise
+            error('Unsupported modulation type');
+    end
+    
+    % Initialize output bits
+    received_bits = zeros(1, length(received_symbols)*n);
+    
+    % Demodulate each symbol
+    for i = 1:length(received_symbols)
+        % Find nearest constellation point
+        [~, idx] = min(abs(received_symbols(i) - Table));
+        
+        % Convert to binary (0-based index)
+        bin_str = dec2bin(idx-1, n);
+        
+        % Store bits
+        received_bits((i-1)*n+1:i*n) = bin_str - '0';
+    end
+end
+
+function [BER, bit_errors] = calculateBER(original_bits, received_bits)
+    % CALCULATEBER Compute Bit Error Rate between original and received bits
+    % Inputs:
+    %   original_bits - Transmitted bit sequence (1D array)
+    %   received_bits - Received/demodulated bit sequence (1D array)
+    % Outputs:
+    %   BER - Bit Error Rate (ratio of incorrect bits)
+    %   bit_errors - Absolute number of bit errors
+    
+    % Ensure both inputs are row vectors
+    original_bits = original_bits(:)';
+    received_bits = received_bits(:)';
+    
+    % Trim received bits if longer (due to padding)
+    if length(received_bits) > length(original_bits)
+        received_bits = received_bits(1:length(original_bits));
+    end
+    
+    % Calculate errors
+    bit_errors = sum(original_bits ~= received_bits);
+    BER = bit_errors / length(original_bits);
+    
+    % Display results
+    %fprintf('Bit errors: %d\n', bit_errors);
+    %fprintf('BER: %.2e\n', BER);
 end
