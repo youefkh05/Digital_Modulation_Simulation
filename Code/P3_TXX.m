@@ -14,7 +14,7 @@ Tx_bits = randi([0 1], 1, bits_Num);
 for mod_idx = 1:length(mod_types)
     mod_type = mod_types{mod_idx};
     
-    fprintf('\n=== Testing %s Modulation ===\n', mod_type);
+    fprintf('\n=== %s Modulation ===\n', mod_type);
     
     % ========================
     % 1. Mapping (Modulation)
@@ -44,29 +44,42 @@ for mod_idx = 1:length(mod_types)
     [BER, bit_errors] = calculateBER(Tx_bits, Rx_bits);
     
     % Display input/output comparison
-    fprintf('Original bits:\n');
-    disp(reshape(Tx_bits, 16, [])'); % Display in 16-bit groups
+    displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, 16);
     
-    fprintf('Received bits:\n');
-    disp(reshape(Rx_bits(1:bits_Num), 16, [])'); % Display in 16-bit groups
-    
-    fprintf('Bit errors: %d\n', bit_errors);
-    fprintf('BER: %.2e\n\n', BER);
 end
 
+
+%{
+Now for this:
+
+1.2 The channel
+The channel is an AWGN channel. In this model, the channel just adds noise to the
+transmitted signal. In MATLAB, the command “randn” should be used to generate the
+AWGN.
+
+we need a function that takes:
+original signal, SNR (E0/No)
+
+and returns the :
+noised signal
+
+to apply the noise we will do as follows:
+noised_realpart= original real part + 
+%}
 
 % ========================
 % Functions
 % ========================
 
-function [Tx_Vector, Table] = mapper(bits, mod_type)
-    % MAPPER Digital modulation mapper with explicit symbol table
+function [Tx_Vector, Table, Eavg] = mapper(bits, mod_type)
+    % MAPPER Digital modulation mapper with explicit symbol table and energy calculation
     % Inputs:
     %   bits     - Binary input array (row vector)
-    %   mod_type - 'BPSK', 'QPSK', '8PSK', 'BFSK', '16QAM'
+    %   mod_type - 'BPSK', 'QPSK', '8PSK', 'BFSK', '16-QAM'
     % Outputs:
     %   Tx_Vector - Complex modulated symbols
     %   Table     - Constellation points (M-ary symbols)
+    %   Eavg      - Average symbol energy (normalized)
 
     % Ensure bits are row vector
     bits = bits(:)';
@@ -109,6 +122,9 @@ function [Tx_Vector, Table] = mapper(bits, mod_type)
     if mod(length(bits), n) ~= 0
         bits = [bits zeros(1, n - mod(length(bits), n))];
     end
+    
+    % Calculate average symbol energy
+    Eavg = mean(abs(Table).^2);
     
     % Reshape into n-bit groups
     bit_groups = reshape(bits, n, [])';
@@ -272,4 +288,37 @@ function [BER, bit_errors] = calculateBER(original_bits, received_bits)
     % Display results
     %fprintf('Bit errors: %d\n', bit_errors);
     %fprintf('BER: %.2e\n', BER);
+end
+
+function displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, bits_per_group)
+    % DISPLAYBITCOMPARISON Display input/output bit comparison and BER results
+    %
+    % Inputs:
+    %   Tx_bits - Transmitted bit sequence
+    %   Rx_bits - Received bit sequence
+    %   bit_errors - Number of bit errors
+    %   BER - Bit Error Rate
+    %   bits_per_group - Number of bits to display per row (default: 16)
+    
+    if nargin < 5
+        bits_per_group = 16; % Default to 16-bit groups
+    end
+    
+    % Ensure inputs are row vectors
+    Tx_bits = Tx_bits(:)';
+    Rx_bits = Rx_bits(:)';
+    
+    % Display original bits
+    fprintf('Original bits:\n');
+    disp(reshape(Tx_bits, bits_per_group, [])');
+    
+    % Display received bits (trimmed to original length)
+    fprintf('\nReceived bits:\n');
+    disp(reshape(Rx_bits(1:length(Tx_bits)), bits_per_group, [])');
+    
+    % Display error statistics
+    fprintf('\nError Analysis:\n');
+    fprintf('Bit errors: %d\n', bit_errors);
+    fprintf('BER: %.2e\n', BER);
+    
 end
