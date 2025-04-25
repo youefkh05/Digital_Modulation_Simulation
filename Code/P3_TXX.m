@@ -11,12 +11,20 @@ SNR_db_range = -4:1:14;
 % Generate random bits (same for all modulations for fair comparison)
 Tx_bits = randi([0 1], 1, bits_Num);
 
+% ========================
+% Initialize storage matrices
+% ========================
+
 % Initialize rx_symbols_all as 2D cell matrix
 % Rows: modulation types, Columns: SNR values
 rx_symbols_all = cell(length(mod_types), length(SNR_db_range));
 
 % Initialize storage for Energy Bits
-Eb_all  =   cell(1, length(mod_types));
+Eb_all = cell(1, length(mod_types));
+
+% Initialize storage for Error
+BER_all = zeros(length(mod_types), length(SNR_db_range));
+error_count_all = zeros(length(mod_types), length(SNR_db_range));
 
 % Loop through all modulation types
 for mod_idx = 1:length(mod_types)
@@ -53,15 +61,71 @@ for mod_idx = 1:length(mod_types)
     Rx_bits = demapper(rx_noisy_symbols, mod_type);
     
     % ========================
-    % 5. Display Results
+    % 5. Calculate and Store Results
     % ========================
-    % Calculate BER
-    [BER, bit_errors] = calculateBER(Tx_bits, Rx_bits);
+    fprintf('\nSNR Results:\n');
+    fprintf('------------\n');
+    
+    for snr_idx = 1:6:length(SNR_db_range)
+        [BER_all(mod_idx, snr_idx), error_count_all(mod_idx, snr_idx)] = ...
+            calculateBER(Tx_bits, Rx_bits{snr_idx});
+        
+        % Display results for each SNR
+        fprintf('SNR: %6.1f dB | BER: %8.2e | Errors: %4d/%d\n', ...
+            SNR_db_range(snr_idx), ...
+            BER_all(mod_idx, snr_idx), ...
+            error_count_all(mod_idx, snr_idx), ...
+            length(Tx_bits));
+    end
     
     % Display input/output comparison
-    displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, 16);
+    %displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, 16);
 end
 
+%{
+ % ========================
+    % 5. Calculate and Display Results
+    % ========================
+    fprintf('\nSNR Results:\n');
+    fprintf('------------\n');
+    
+    for snr_idx = 1:length(SNR_db_range)
+        [BER_all(mod_idx, snr_idx), error_count_all(mod_idx, snr_idx)] = ...
+            calculateBER(Tx_bits, Rx_bits{snr_idx});
+        
+        % Display results for each SNR
+        fprintf('SNR: %6.1f dB | BER: %8.2e | Errors: %4d/%d\n', ...
+            SNR_db_range(snr_idx), ...
+            BER_all(mod_idx, snr_idx), ...
+            error_count_all(mod_idx, snr_idx), ...
+            length(Tx_bits));
+        
+        % Plot constellation with noise for this SNR
+        figure(const_fig);
+        hold on;
+        scatter(real(rx_noisy_symbols{snr_idx}), imag(rx_noisy_symbols{snr_idx}), ...
+            20, 'r', 'filled', 'MarkerFaceAlpha', 0.3);
+        hold off;
+        legend('Reference', 'Noisy Symbols');
+        title(sprintf('%s Constellation at %d dB SNR', mod_type, SNR_db_range(snr_idx)));
+    end
+    
+    % Add to BER plot
+    figure(ber_fig);
+    semilogy(SNR_db_range, BER_all(mod_idx,:), 'o-', ...
+        'Color', colors(mod_idx,:), ...
+        'DisplayName', mod_types{mod_idx});
+end
+
+% Finalize BER plot
+figure(ber_fig);
+hold off;
+title('BER vs SNR for Different Modulation Schemes');
+xlabel('SNR (dB)');
+ylabel('Bit Error Rate (BER)');
+legend('Location', 'best');
+grid on;
+%}
 
 % ========================
 % Functions
@@ -225,10 +289,26 @@ end
 function [received_bits] = demapper(received_symbols, mod_type)
     % DEMAPPER Digital demodulation demapper
     % Inputs:
-    %   received_symbols - Complex received symbols
+    %   received_symbols - Complex received symbols (array or cell array)
     %   mod_type        - Modulation type ('BPSK', 'QPSK', etc.)
     % Output:
-    %   received_bits   - Demodulated bit stream
+    %   received_bits   - Demodulated bit stream (array or cell array)
+    
+    % Check if input is cell array (multiple SNR cases)
+    if iscell(received_symbols)
+        % Process each SNR case
+        received_bits = cell(size(received_symbols));
+        for i = 1:numel(received_symbols)
+            received_bits{i} = demodulate_symbols(received_symbols{i}, mod_type);
+        end
+    else
+        % Single SNR case
+        received_bits = demodulate_symbols(received_symbols, mod_type);
+    end
+end
+
+function bits = demodulate_symbols(symbols, mod_type)
+    % Helper function for actual demodulation
     
     % Get constellation table from mapper
     [~, Table] = mapper([1], mod_type);
@@ -248,46 +328,19 @@ function [received_bits] = demapper(received_symbols, mod_type)
     end
     
     % Initialize output bits
-    received_bits = zeros(1, length(received_symbols)*n);
+    bits = zeros(1, length(symbols)*n);
     
     % Demodulate each symbol
-    for i = 1:length(received_symbols)
+    for i = 1:length(symbols)
         % Find nearest constellation point
-        [~, idx] = min(abs(received_symbols(i) - Table));
+        [~, idx] = min(abs(symbols(i) - Table));
         
         % Convert to binary (0-based index)
         bin_str = dec2bin(idx-1, n);
         
         % Store bits
-        received_bits((i-1)*n+1:i*n) = bin_str - '0';
+        bits((i-1)*n+1:i*n) = bin_str - '0';
     end
-end
-
-function [BER, bit_errors] = calculateBER(original_bits, received_bits)
-    % CALCULATEBER Compute Bit Error Rate between original and received bits
-    % Inputs:
-    %   original_bits - Transmitted bit sequence (1D array)
-    %   received_bits - Received/demodulated bit sequence (1D array)
-    % Outputs:
-    %   BER - Bit Error Rate (ratio of incorrect bits)
-    %   bit_errors - Absolute number of bit errors
-    
-    % Ensure both inputs are row vectors
-    original_bits = original_bits(:)';
-    received_bits = received_bits(:)';
-    
-    % Trim received bits if longer (due to padding)
-    if length(received_bits) > length(original_bits)
-        received_bits = received_bits(1:length(original_bits));
-    end
-    
-    % Calculate errors
-    bit_errors = sum(original_bits ~= received_bits);
-    BER = bit_errors / length(original_bits);
-    
-    % Display results
-    %fprintf('Bit errors: %d\n', bit_errors);
-    %fprintf('BER: %.2e\n', BER);
 end
 
 function noisy_signals = addAWGNChannel(SNR_range_db, clean_signal, Eb)
@@ -330,6 +383,48 @@ function noisy_signals = addAWGNChannel(SNR_range_db, clean_signal, Eb)
     if length(SNR_range_db) == 1
         noisy_signals = noisy_signals{1};
     end
+end
+
+function [BER, bit_errors] = calculateBER(original_bits, received_bits)
+    % CALCULATEBER Compute Bit Error Rate for single or multiple SNR cases
+    % Inputs:
+    %   original_bits - Transmitted bit sequence (1D array)
+    %   received_bits - Received bits (1D array or cell array for multiple SNR)
+    % Outputs:
+    %   BER - Bit Error Rate (scalar or array matching received_bits input)
+    %   bit_errors - Number of errors (scalar or array)
+    
+    % Ensure original bits are row vector
+    original_bits = original_bits(:)';
+    
+    % Handle cell array input (multiple SNR cases)
+    if iscell(received_bits)
+        BER = zeros(size(received_bits));
+        bit_errors = zeros(size(received_bits));
+        
+        for i = 1:numel(received_bits)
+            [BER(i), bit_errors(i)] = calculateSingleBER(original_bits, received_bits{i});
+        end
+    else
+        % Single SNR case
+        [BER, bit_errors] = calculateSingleBER(original_bits, received_bits);
+    end
+end
+
+function [BER, bit_errors] = calculateSingleBER(original_bits, received_bits)
+    % Helper function for single SNR case BER calculation
+    
+    % Ensure received bits are row vector
+    received_bits = received_bits(:)';
+    
+    % Trim received bits if longer (due to padding)
+    if length(received_bits) > length(original_bits)
+        received_bits = received_bits(1:length(original_bits));
+    end
+    
+    % Calculate errors
+    bit_errors = sum(original_bits ~= received_bits);
+    BER = bit_errors / length(original_bits);
 end
 
 function displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, bits_per_group)
