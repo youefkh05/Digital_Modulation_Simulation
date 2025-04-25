@@ -11,9 +11,8 @@ SNR_db_range = -4:1:14;
 % Generate random bits (same for all modulations for fair comparison)
 Tx_bits = randi([0 1], 1, bits_Num);
 
-% Initialize rx_symbols_all as 2D cell matrix
-% Rows: modulation types, Columns: SNR values
-rx_symbols_all = cell(length(mod_types), length(SNR_db_range));
+% Initialize storage for received symbols
+rx_symbols_all = cell(1, length(mod_types));
 
 % Initialize storage for Energy Bits
 Eb_all  =   cell(1, length(mod_types));
@@ -41,16 +40,20 @@ for mod_idx = 1:length(mod_types)
     % ========================
     % 3. Channel Transmission
     % ========================
-    % Get noisy symbols for all SNR values
-    rx_noisy_symbols = addAWGNChannel(SNR_db_range, tx_symbols, Eb);
+    % For noise-free simulation:
+    %rx_symbols = tx_symbols;
+    % For noisy channel (uncomment and use instead):
+     rx_symbols = awgn(tx_symbols, SNR_dB, 'measured');
+     rx_symbols = ...
+    addAWGNChannel(SNR_db_range, tx_symbols, Eb);
     
-    % Store in 2D cell matrix
-    rx_symbols_all(mod_idx, :) = rx_noisy_symbols;
+    % Store received symbols for this modulation type
+    rx_symbols_all{mod_idx} = rx_symbols;
     
     % ========================
     % 4. Demapping (Demodulation)
     % ========================
-    Rx_bits = demapper(rx_noisy_symbols, mod_type);
+    Rx_bits = demapper(rx_symbols, mod_type);
     
     % ========================
     % 5. Display Results
@@ -290,20 +293,19 @@ function [BER, bit_errors] = calculateBER(original_bits, received_bits)
     %fprintf('BER: %.2e\n', BER);
 end
 
-function noisy_signals = addAWGNChannel(SNR_range_db, clean_signal, Eb)
+function noisy_signal = ...
+    addAWGNChannel(SNR_range_db, clean_signal, Eb)
     % ADDAGWNCHANNEL General AWGN channel noise adder
     % Inputs:
     %   SNR_range_db - Array of SNR values in dB
-    %   clean_signal - Input signal (vector or matrix)
+    %   clean_signal - Input signal (can be array or cell array)
     %   Eb - Energy per bit
     % Output:
-    %   noisy_signals - Cell array of noisy signals for each SNR
+    %   noisy_signal - Cell array of noisy signals for each SNR
+    
     
     % Initialize output cell array
-    noisy_signals = cell(length(SNR_range_db), 1);
-    
-    % Get size of input signal
-    signal_size = size(clean_signal);
+    noisy_signal = cell(length(SNR_range_db), 1);
     
     % Process each SNR point
     for i = 1:length(SNR_range_db)
@@ -313,23 +315,20 @@ function noisy_signals = addAWGNChannel(SNR_range_db, clean_signal, Eb)
         % Calculate noise power (N0)
         N0 = 1 / SNR_linear;
         
-        % Generate proper noise
+        % Generate proper noise (works for both real and complex signals)
         if isreal(clean_signal)
             % Real noise for real signals
-            noise = sqrt(Eb*N0/2) * randn(signal_size);
+            noise = sqrt(Eb*N0/2) * randn(1,size(current_signal));
         else
             % Complex noise for complex signals
-            noise = sqrt(Eb*N0/2) * (randn(signal_size) + 1j*randn(signal_size));
+            noise = sqrt(Eb*N0/2) * (randn(1,size(current_signal)) + 1j*randn(1,size(current_signal)));
         end
-        
-        % Add noise to the signal
-        noisy_signals{i} = clean_signal + noise;
+          
+        % Add the noise
+        noisy_signal = clean_signal +  noise;
     end
     
-    % If only one SNR point was requested, return array instead of cell
-    if length(SNR_range_db) == 1
-        noisy_signals = noisy_signals{1};
-    end
+
 end
 
 function displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, bits_per_group)
