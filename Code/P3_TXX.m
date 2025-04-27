@@ -4,7 +4,7 @@ clear; clc; close all;
 % ========================
 % Simulation Parameters
 % ========================
-bits_Num = 48;                                  % Number of bits to transmit
+bits_Num = 6 * 2^10;                                  % Number of bits to transmit
 mod_types = {'BPSK', 'QPSK', '8PSK', '16-QAM'}; % Cell array of modulation types
 SNR_db_range = -4:1:14;
 
@@ -43,7 +43,7 @@ for mod_idx = 1:length(mod_types)
     % ========================
     % 2. Display Constellation
     % ========================
-    drawConstellation(constellation, mod_type);
+    drawConstellation(constellation, mod_type, 1);
     title(sprintf('%s Constellation', mod_type));
     
     % ========================
@@ -78,54 +78,11 @@ for mod_idx = 1:length(mod_types)
             length(Tx_bits));
     end
     
-    % Display input/output comparison
-    %displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, 16);
+
 end
 
-%{
- % ========================
-    % 5. Calculate and Display Results
-    % ========================
-    fprintf('\nSNR Results:\n');
-    fprintf('------------\n');
-    
-    for snr_idx = 1:length(SNR_db_range)
-        [BER_all(mod_idx, snr_idx), error_count_all(mod_idx, snr_idx)] = ...
-            calculateBER(Tx_bits, Rx_bits{snr_idx});
-        
-        % Display results for each SNR
-        fprintf('SNR: %6.1f dB | BER: %8.2e | Errors: %4d/%d\n', ...
-            SNR_db_range(snr_idx), ...
-            BER_all(mod_idx, snr_idx), ...
-            error_count_all(mod_idx, snr_idx), ...
-            length(Tx_bits));
-        
-        % Plot constellation with noise for this SNR
-        figure(const_fig);
-        hold on;
-        scatter(real(rx_noisy_symbols{snr_idx}), imag(rx_noisy_symbols{snr_idx}), ...
-            20, 'r', 'filled', 'MarkerFaceAlpha', 0.3);
-        hold off;
-        legend('Reference', 'Noisy Symbols');
-        title(sprintf('%s Constellation at %d dB SNR', mod_type, SNR_db_range(snr_idx)));
-    end
-    
-    % Add to BER plot
-    figure(ber_fig);
-    semilogy(SNR_db_range, BER_all(mod_idx,:), 'o-', ...
-        'Color', colors(mod_idx,:), ...
-        'DisplayName', mod_types{mod_idx});
-end
+drawNoisyConstellations(rx_symbols_all, SNR_db_range, mod_types);
 
-% Finalize BER plot
-figure(ber_fig);
-hold off;
-title('BER vs SNR for Different Modulation Schemes');
-xlabel('SNR (dB)');
-ylabel('Bit Error Rate (BER)');
-legend('Location', 'best');
-grid on;
-%}
 
 % ========================
 % Functions
@@ -200,12 +157,12 @@ function [Tx_Vector, Table, Eavg, Eb] = mapper(bits, mod_type)
     Tx_Vector = Table(Array_symbol);
 end
 
-function drawConstellation(Table, mod_type)
+function drawConstellation(Table, mod_type, showdetails)
     % DRAWCOnSTELLATION Enhanced constellation visualization
     % Inputs:
     %   Table - Constellation points (complex numbers)
     %   mod_type - Modulation type ('BPSK', 'QPSK', etc.)
-    %   show_regions - true to show colored regions, false for boundaries only
+    %   showdetails- true to show colored regions, false for boundaries only
     
     if nargin < 3
         show_regions = true; % Default to showing regions
@@ -227,20 +184,24 @@ function drawConstellation(Table, mod_type)
     % =============================================
     % 1. Decision Visualization
     % =============================================
-    if length(Table) > 2  % Voronoi needs at least 3 points
-        [vx, vy] = voronoi(points(:,1), points(:,2));
-        plot(vx, vy, 'k-', 'LineWidth', 1.5);
-    else
-        % For BPSK, draw simple decision boundary
-        plot([0 0], ylim, 'k--', 'LineWidth', 1.5);
+    if showdetails == 1
+        if length(Table) > 2  % Voronoi needs at least 3 points
+            [vx, vy] = voronoi(points(:,1), points(:,2));
+            plot(vx, vy, 'k-', 'LineWidth', 1.5);
+        else
+            % For BPSK, draw simple decision boundary
+            plot([0 0], ylim, 'k--', 'LineWidth', 1.5);
+        end
     end
-       
    
     % =============================================
     % 2. Constellation Points
     % =============================================
-    scatter(points(:,1), points(:,2), 100, 'filled', 'k');
-    
+    if showdetails == 1
+        scatter(points(:,1), points(:,2), 100, 'filled', 'k');
+    else
+        scatter(points(:,1), points(:,2), 20, 'filled', 'k');
+    end
     % =============================================
     % 3. Binary Labels
     % =============================================
@@ -256,14 +217,15 @@ function drawConstellation(Table, mod_type)
         otherwise
             error('Unsupported modulation type');
     end
-    
-    for i = 1:length(Table)
-        bin_str = dec2bin(i-1, n);
-        % Position text slightly offset from the point
-        text(real(Table(i)) + 0.05, imag(Table(i)) + 0.05, bin_str, ...
-            'FontSize', 10, 'Color', 'r');
+   
+    if showdetails == 1
+        for i = 1:length(Table)
+            bin_str = dec2bin(i-1, n);
+            % Position text slightly offset from the point
+            text(real(Table(i)) + 0.05, imag(Table(i)) + 0.05, bin_str, ...
+                'FontSize', 10, 'Color', 'r');
+        end
     end
-    
     % =============================================
     % 4. Plot Formatting
     % =============================================
@@ -284,6 +246,56 @@ function drawConstellation(Table, mod_type)
     
     
     hold off;
+end
+
+function drawNoisyConstellations(rx_symbols_all, SNR_db_range, mod_types)
+    % DRAWNOISYCONSTELLATIONS Plot constellations with noisy received points
+    % Inputs:
+    %   rx_symbols_all - Cell array, rx_symbols_all{mod_idx, snr_idx}
+    %   SNR_db_range   - Vector of SNR values (dB)
+    %   mod_types      - Cell array of modulation type strings (e.g., {'BPSK', 'QPSK'})
+    
+    % Validate inputs
+    if ~iscell(rx_symbols_all) || ~iscell(mod_types)
+        error('rx_symbols_all and mod_types must be cell arrays.');
+    end
+
+    num_mods = numel(mod_types);
+    num_snr = numel(SNR_db_range);
+    
+    for mod_idx = 1:num_mods
+        mod_type = mod_types{mod_idx};
+        
+        % Generate constellation table for this modulation
+        [~, Table] = mapper([1], mod_type);
+        
+        for snr_idx = 1:3:num_snr
+            rx_symbols = rx_symbols_all{mod_idx, snr_idx};
+            snr_db = SNR_db_range(snr_idx);          
+            
+            % Center axes
+            ax = gca;
+            ax.XAxisLocation = 'origin';
+            ax.YAxisLocation = 'origin';
+            
+            % Plot decision regions and ideal points
+            drawConstellation(Table, mod_type, 0);
+            title(sprintf('%s Constellation at SNR = %d dB', mod_type, snr_db));
+            xlabel('In-Phase (I)'); ylabel('Quadrature (Q)');
+            grid on;
+            axis equal;
+            hold on;
+            % Plot noisy received symbols
+            scatter(real(rx_symbols), imag(rx_symbols), 10, 'b', 'filled', 'MarkerFaceAlpha', 0.4);
+            
+            % Set axis limits a bit bigger to fit noisy points
+            max_val = 4;
+            xlim([-max_val, max_val]);
+            ylim([-max_val, max_val]);
+            
+            hold off;
+        end
+    end
 end
 
 function [received_bits] = demapper(received_symbols, mod_type)
