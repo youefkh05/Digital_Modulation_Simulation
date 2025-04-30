@@ -4,9 +4,10 @@ clear; clc; close all;
 % ========================
 % Simulation Parameters
 % ========================
-bits_Num = 6 * 2^15;                                  % Number of bits to transmit 
-mod_types = {'BPSK', 'QPSK', 'QPSKNG', '8PSK', '16-QAM'}; % Cell array of modulation types
-SNR_db_range = -4:1:16;
+%bits_Num = 6 * 2^10;                                  % Number of bits to transmit
+bits_Num = 120000;  
+mod_types = {'BPSK', 'QPSK','QPS, '8PSK', '16-QAM'}; % Cell array of modulation types
+SNR_db_range = -4:1:14;
 
 % Generate random bits (same for all modulations for fair comparison)
 Tx_bits = randi([0 1], 1, bits_Num);
@@ -84,14 +85,13 @@ end
 %   Display Noise
 drawNoisyConstellations(rx_symbols_all, SNR_db_range, mod_types);
 
-%   Graph BER Vs SNR (task 1)
+disp(size(BER_all));
+disp(size(SNR_db_range));
+disp(length(mod_types));
+
+
+%   Graph BER Vs SNR
 plot_BER_vs_SNR(BER_all, SNR_db_range, mod_types);
-
-%   Graph BER grey vs not grey QPSK (task 2)
-plot_BER_vs_SNR_dual(BER_all(2, :), BER_all(3, :), SNR_db_range, mod_types(2:3));
-
-%   Graph BER Vs SNR (task 1)
-plot_BER_vs_SNR_all(BER_all, SNR_db_range, mod_types);
 
 % ========================
 % Functions
@@ -101,7 +101,7 @@ function [Tx_Vector, Table, Eavg, Eb] = mapper(bits, mod_type)
     % MAPPER Digital modulation mapper with explicit symbol table and energy calculation
     % Inputs:
     %   bits     - Binary input array (row vector)
-    %   mod_type - 'BPSK', 'QPSK', 'QPSKNG', '8PSK', 'BFSK', '16-QAM'
+    %   mod_type - 'BPSK', 'QPSK', '8PSK', 'BFSK', '16-QAM'
     % Outputs:
     %   Tx_Vector - Complex modulated symbols
     %   Table     - Constellation points (M-ary symbols)
@@ -122,11 +122,6 @@ function [Tx_Vector, Table, Eavg, Eb] = mapper(bits, mod_type)
             n = 2;
             M = 4;
             Table = [-1-1j, -1+1j, 1-1j, 1+1j];  % QPSK symbols
-            
-        case 'QPSKNG'
-            n = 2;
-            M = 4;
-            Table = [-1-1j, -1+1j, 1+1j, 1-1j];  % QPSKNG symbols    
             
         case '8PSK'
             n = 3;
@@ -224,8 +219,6 @@ function drawConstellation(Table, mod_type, showdetails)
             n = 1; 
         case 'QPSK'
             n = 2; 
-        case 'QPSKNG'
-            n = 2;     
         case '8PSK'
             n = 3; 
         case {'16QAM', '16-QAM'}
@@ -284,8 +277,8 @@ function drawNoisyConstellations(rx_symbols_all, SNR_db_range, mod_types)
         
         % Generate constellation table for this modulation
         [~, Table] = mapper([1], mod_type);
-
-        for snr_idx = 1:floor(num_snr/4):num_snr
+        
+        for snr_idx = 1:3:num_snr
             rx_symbols = rx_symbols_all{mod_idx, snr_idx};
             snr_db = SNR_db_range(snr_idx);          
             
@@ -346,8 +339,6 @@ function bits = demodulate_symbols(symbols, mod_type)
         case 'BPSK'
             n = 1;
         case 'QPSK'
-            n = 2;
-        case 'QPSKNG'
             n = 2;
         case '8PSK'
             n = 3;
@@ -533,178 +524,6 @@ function plot_BER_vs_SNR(BER_all, SNR_Range, Mod_Types)
         
         hold off;
     end
-end
-
-function plot_BER_vs_SNR_dual(BER1, BER2, SNR_Range, Mod_Types)
-    % Plots BER vs SNR for two BER datasets + theoretical for multiple mod types
-    % Inputs:
-    %   BER1       : matrix (SNR points × modulation types) - first BER dataset
-    %   BER2       : matrix (SNR points × modulation types) - second BER dataset
-    %   SNR_Range  : vector of SNR values in dB
-    %   Mod_Types  : cell array of modulation type names (strings)
-
-    % Transpose if needed
-    if size(BER1, 1) ~= length(SNR_Range)
-        BER1 = BER1.';
-    end
-    if size(BER2, 1) ~= length(SNR_Range)
-        BER2 = BER2.';
-    end
-
-    num_mods = length(Mod_Types);
-    colors = ['b', 'r', 'g', 'k', 'm', 'c', 'y'];
-    markers = ['o', 's', '^', 'd', 'x', '+', '*'];
-
-    for idx = 1:num_mods
-        figure;
-        hold on;
-        grid on;
-
-        EbNo = 10.^(SNR_Range/10); % Convert SNR from dB to linear
-
-        % Plot BER1 (e.g., baseline)
-        semilogy(SNR_Range, BER1, ...
-                 [colors(mod(idx-1,length(colors))+1) '-' markers(mod(idx-1,length(markers))+1)], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
-
-        % Plot BER2 (e.g., improved method)
-        semilogy(SNR_Range, BER2, ...
-                 [colors(mod(idx,length(colors))+1) ':' markers(mod(idx,length(markers))+1)], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
-
-        % Compute theoretical BER
-        switch Mod_Types{idx}
-            case 'BPSK'
-                BER_theory = 0.5 * erfc(sqrt(EbNo));
-            case 'QPSK'
-                BER_theory = 0.5 * erfc(sqrt(EbNo));
-            case 'QPSKNG'
-                BER_theory = 0.5 * erfc(sqrt(EbNo));
-            case '8PSK'
-                BER_theory = erfc(sin(pi/8) * sqrt(3 * EbNo)) / 3;
-            case '16-QAM'
-                BER_theory = (3/8)*erfc(sqrt((2/5)*EbNo));
-            case '64qam'
-                BER_theory = (7/24)*erfc(sqrt((7/21)*EbNo));
-            case 'BFSK'
-                BER_theory = 0.5*erfc(sqrt(0.5*EbNo));
-            otherwise
-                warning('No theoretical curve for %s. Skipping.', Mod_Types{idx});
-                BER_theory = nan(size(EbNo));
-        end
-
-        % Plot theoretical BER if available
-        if ~any(isnan(BER_theory))
-            semilogy(SNR_Range, BER_theory, ...
-                     [colors(mod(idx+1,length(colors))+1) '--'], ...
-                     'LineWidth', 1.5);
-        end
-
-        % Labels and title
-        xlabel('E_b/N_0 (dB)');
-        ylabel('Bit Error Rate (BER)');
-        title(['BER vs. E_b/N_0 for ' Mod_Types{idx}]);
-
-        % Legend
-        legend_entries = {['Simulated 1 (' Mod_Types{idx} ')'], ...
-                          ['Simulated 2 (' Mod_Types{idx} ')'], ...
-                          ['Theoretical (' Mod_Types{idx} ')']};
-        legend(legend_entries, 'Location', 'southwest');
-
-        xlim([min(SNR_Range) max(SNR_Range)]);
-        %ylim([1e-5 1]);
-
-        hold off;
-    end
-end
-
-function plot_BER_vs_SNR_all(BER_all, SNR_Range, Mod_Types)
-    % This function plots:
-    % 1. All simulated BER curves in one figure
-    % 2. All simulated + theoretical BER curves in another figure
-    %
-    % Inputs:
-    %   BER_all    : matrix (SNR points × modulation types)
-    %   SNR_Range  : vector of SNR values in dB
-    %   Mod_Types  : cell array of modulation type names (strings)
-
-    % Transpose if needed
-    if size(BER_all, 1) ~= length(SNR_Range)
-        BER_all = BER_all.';
-    end
-
-    colors = ['b', 'r', 'g', 'k', 'm', 'c', 'y'];
-    markers = ['o', 's', '^', 'd', 'x', '+', '*'];
-    EbNo = 10.^(SNR_Range / 10); % Convert to linear
-
-    % 1. PLOT ONLY SIMULATED BER
-    figure;
-    hold on; grid on;
-    legend_entries = {};
-
-    for idx = 1:length(Mod_Types)
-        color = colors(mod(idx-1, length(colors)) + 1);
-        marker = markers(mod(idx-1, length(markers)) + 1);
-
-        semilogy(SNR_Range, BER_all(:, idx), ...
-                 [color '-' marker], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
-
-        legend_entries{end+1} = ['Simulated (' Mod_Types{idx} ')'];
-    end
-
-    xlabel('E_b/N_0 (dB)');
-    ylabel('Bit Error Rate (BER)');
-    title('Simulated BER vs. E_b/N_0 for All Modulation Schemes');
-    legend(legend_entries, 'Location', 'southwest');
-    xlim([min(SNR_Range), max(SNR_Range)]);
-    hold off;
-
-    % 2. PLOT SIMULATED + THEORETICAL BER
-    figure;
-    hold on; grid on;
-    legend_entries = {};
-
-    for idx = 1:length(Mod_Types)
-        color = colors(mod(idx-1, length(colors)) + 1);
-        marker = markers(mod(idx-1, length(markers)) + 1);
-
-        % Simulated
-        semilogy(SNR_Range, BER_all(:, idx), ...
-                 [color '-' marker], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
-        legend_entries{end+1} = ['Simulated (' Mod_Types{idx} ')'];
-
-        % Theoretical
-        switch Mod_Types{idx}
-            case {'BPSK', 'QPSK', 'QPSKNG'}
-                BER_theory = 0.5 * erfc(sqrt(EbNo));
-            case '8PSK'
-                BER_theory = erfc(sin(pi/8) * sqrt(3 * EbNo)) / 3;
-            case '16-QAM'
-                BER_theory = (3/8) * erfc(sqrt((2/5)*EbNo));
-            case '64qam'
-                BER_theory = (7/24) * erfc(sqrt((7/21)*EbNo));
-            case 'BFSK'
-                BER_theory = 0.5 * erfc(sqrt(0.5*EbNo));
-            otherwise
-                BER_theory = nan(size(EbNo));
-        end
-
-        if ~any(isnan(BER_theory))
-            semilogy(SNR_Range, BER_theory, ...
-                     [color '--'], ...
-                     'LineWidth', 1.5);
-            legend_entries{end+1} = ['Theoretical (' Mod_Types{idx} ')'];
-        end
-    end
-
-    xlabel('E_b/N_0 (dB)');
-    ylabel('Bit Error Rate (BER)');
-    title('Simulated + Theoretical BER vs. E_b/N_0 for All Modulation Schemes');
-    legend(legend_entries, 'Location', 'southwest');
-    xlim([min(SNR_Range), max(SNR_Range)]);
-    hold off;
 end
 
 function displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, bits_per_group)

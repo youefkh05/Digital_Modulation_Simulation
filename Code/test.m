@@ -1,4 +1,4 @@
-%close all;
+close all;
 clear;
 N_Bits = 120000;
 % Modulation Schemes Tables
