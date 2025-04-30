@@ -4,7 +4,8 @@ clear; clc; close all;
 % ========================
 % Simulation Parameters
 % ========================
-bits_Num = 6 * 2^10;                                  % Number of bits to transmit
+%bits_Num = 6 * 2^10;                                  % Number of bits to transmit
+bits_Num = 48;  
 mod_types = {'BPSK', 'QPSK', '8PSK', '16-QAM'}; % Cell array of modulation types
 SNR_db_range = -4:1:14;
 
