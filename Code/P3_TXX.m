@@ -5,7 +5,8 @@ clear; clc; close all;
 % Simulation Parameters
 % ========================
 bits_Num = 6 * 2^15;                                  % Number of bits to transmit 
-mod_types = {'BPSK', 'QPSK', 'QPSKNG', '8PSK', '16-QAM'}; % Cell array of modulation types
+%mod_types = {'BPSK', 'QPSK', 'QPSKNG', '8PSK', '16-QAM', 'BFSK'}; % Cell array of modulation types
+mod_types = {'BFSK'};
 SNR_db_range = -4:1:16;
 
 % Generate random bits (same for all modulations for fair comparison)
@@ -81,6 +82,7 @@ for mod_idx = 1:length(mod_types)
 
 end
 
+
 %   Display Noise
 drawNoisyConstellations(rx_symbols_all, SNR_db_range, mod_types);
 
@@ -88,10 +90,62 @@ drawNoisyConstellations(rx_symbols_all, SNR_db_range, mod_types);
 plot_BER_vs_SNR(BER_all, SNR_db_range, mod_types);
 
 %   Graph BER grey vs not grey QPSK (task 2)
-plot_BER_vs_SNR_dual(BER_all(2, :), BER_all(3, :), SNR_db_range, mod_types(2:3));
+%plot_BER_vs_SNR_dual(BER_all(2, :), BER_all(3, :), SNR_db_range, mod_types(2:3));
 
 %   Graph BER Vs SNR (task 1)
 plot_BER_vs_SNR_all(BER_all, SNR_db_range, mod_types);
+
+
+% ========================
+%    BFSK
+% ========================
+
+% ===============================
+% declaring parameters (for PSD) 
+% ===============================
+bits_Num = 100;  %less number of bits from the BER 
+N_realization = 10000; 
+data = randi([0 1], N_realization, bits_Num + 1); 
+samples_per_bit=7;
+samples_num = samples_per_bit*bits_Num;
+sampled_data = repelem(data, 1, samples_per_bit); 
+Tb = 0.07; % each sample takes 0.01 second 
+
+t = 0:Tb/samples_per_bit:Tb; 
+Fs = 100; 
+tx_with_delay = zeros(N_realization, 700); 
+
+% mapping to BB signals 
+tx_out = BFSK_BB(bits_Num, N_realization, Tb, Eb, samples_per_bit, sampled_data, t);
+
+% random delay 
+for i = 1:N_realization 
+    r = randi([0 (samples_per_bit - 1)]); 
+    tx_with_delay(i,:) = tx_out(i,r+1:samples_num+r); 
+end 
+
+% Autocorrelation 
+BFSK_autocorr = compute_BFSK_autocorrelation(tx_with_delay);
+Rx_BFSK = BFSK_autocorr; 
+  
+% plt auto correlation
+draw_autocorr(Rx_BFSK);
+
+% Practical PSD 
+BFSK_PSD = fftshift(fft(Rx_BFSK));    % Use fftshift to center the practical PSD
+f = (-350:349) / 700 * Fs;            % Frequency vector for practical PSD
+f_normalized = f * Tb;                % Normalize frequency axis to match the theoretical PSD
+
+% Theoretical PSD 
+PSD_theoritical = (8 * cos(pi * Tb * f).^2) ./ (pi^2 * (4 * Tb^2 * f.^2 - 1).^2);
+
+% Handle Inf values in the theoretical PSD
+idx = PSD_theoritical == Inf;
+PSD_theoritical(idx) = 2;  % Change Inf to finite value for plotting
+
+% Plot PSD
+draw_psd(f_normalized, BFSK_PSD, PSD_theoritical);
+
 
 % ========================
 % Functions
@@ -135,7 +189,9 @@ function [Tx_Vector, Table, Eavg, Eb] = mapper(bits, mod_type)
             Table = exp(1j*angles);
             
         case 'BFSK'
-            error('BFSK requires time-domain implementation (see alternative)');
+            n=1;
+            M=2;
+            Table = [ 1, 1j];
             
         case '16-QAM'
             n = 4;
@@ -230,6 +286,8 @@ function drawConstellation(Table, mod_type, showdetails)
             n = 3; 
         case {'16QAM', '16-QAM'}
             n = 4;
+        case 'BFSK'
+            n=1;
         otherwise
             error('Unsupported modulation type');
     end
@@ -338,9 +396,6 @@ end
 function bits = demodulate_symbols(symbols, mod_type)
     % Helper function for actual demodulation
     
-    % Get constellation table from mapper
-    [~, Table] = mapper([1], mod_type);
-    
     % Determine bits per symbol
     switch upper(mod_type)
         case 'BPSK'
@@ -353,12 +408,36 @@ function bits = demodulate_symbols(symbols, mod_type)
             n = 3;
         case {'16QAM', '16-QAM'}
             n = 4;
+        case 'BFSK'
+            n=1;
         otherwise
             error('Unsupported modulation type');
     end
     
     % Initialize output bits
     bits = zeros(1, length(symbols)*n);
+    
+    % ======================
+    % Special case for BFSK
+    % ======================
+    if strcmpi(mod_type, 'BFSK')
+        for i = 1:length(symbols)
+            theta = angle(symbols(i));
+            if (theta > pi/4 && theta < 5*pi/4)
+                bits(i) = 1;
+            else
+                bits(i) = 0;
+            end
+        end
+        return;
+    end
+    
+    % ======================
+    % General case
+    % ======================
+        
+    % Get constellation table from mapper
+    [~, Table] = mapper([1], mod_type);
     
     % Demodulate each symbol
     for i = 1:length(symbols)
@@ -474,7 +553,7 @@ function plot_BER_vs_SNR(BER_all, SNR_Range, Mod_Types)
 
     % Define colors and markers for different mod types
     colors = ['b', 'r', 'g', 'k', 'm', 'c', 'y'];
-    markers = ['o', 's', '^', 'd', 'x', '+', '*'];
+    %markers = ['o', 's', '^', 'd', 'x', '+', '*'];
 
     % Loop over each modulation type and create a new figure for each
     for idx = 1:num_mods
@@ -485,8 +564,8 @@ function plot_BER_vs_SNR(BER_all, SNR_Range, Mod_Types)
 
         % Plot simulated BER
         semilogy(SNR_Range, BER_all(:, idx), ...
-                 [colors(mod(idx-1,length(colors))+1) '-' markers(mod(idx-1,length(markers))+1)], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
+                 [colors(mod(idx-1,length(colors))+1) ], ...
+                 'LineWidth', 1.5);
 
         EbNo = 10.^(SNR_Range/10); % Convert SNR from dB to linear
 
@@ -553,7 +632,7 @@ function plot_BER_vs_SNR_dual(BER1, BER2, SNR_Range, Mod_Types)
 
     num_mods = length(Mod_Types);
     colors = ['b', 'r', 'g', 'k', 'm', 'c', 'y'];
-    markers = ['o', 's', '^', 'd', 'x', '+', '*'];
+    %markers = ['o', 's', '^', 'd', 'x', '+', '*'];
 
     for idx = 1:num_mods
         figure;
@@ -564,13 +643,13 @@ function plot_BER_vs_SNR_dual(BER1, BER2, SNR_Range, Mod_Types)
 
         % Plot BER1 (e.g., baseline)
         semilogy(SNR_Range, BER1, ...
-                 [colors(mod(idx-1,length(colors))+1) '-' markers(mod(idx-1,length(markers))+1)], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
+                 [colors(mod(idx-1,length(colors))+1) ], ...
+                 'LineWidth', 1.5);
 
         % Plot BER2 (e.g., improved method)
         semilogy(SNR_Range, BER2, ...
-                 [colors(mod(idx,length(colors))+1) ':' markers(mod(idx,length(markers))+1)], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
+                 [colors(mod(idx,length(colors))+1) ], ...
+                 'LineWidth', 1.5);
 
         % Compute theoretical BER
         switch Mod_Types{idx}
@@ -634,7 +713,7 @@ function plot_BER_vs_SNR_all(BER_all, SNR_Range, Mod_Types)
     end
 
     colors = ['b', 'r', 'g', 'k', 'm', 'c', 'y'];
-    markers = ['o', 's', '^', 'd', 'x', '+', '*'];
+    %markers = ['o', 's', '^', 'd', 'x', '+', '*'];
     EbNo = 10.^(SNR_Range / 10); % Convert to linear
 
     % 1. PLOT ONLY SIMULATED BER
@@ -644,11 +723,11 @@ function plot_BER_vs_SNR_all(BER_all, SNR_Range, Mod_Types)
 
     for idx = 1:length(Mod_Types)
         color = colors(mod(idx-1, length(colors)) + 1);
-        marker = markers(mod(idx-1, length(markers)) + 1);
+        %marker = markers(mod(idx-1, length(markers)) + 1);
 
         semilogy(SNR_Range, BER_all(:, idx), ...
-                 [color '-' marker], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
+                 [color], ...
+                 'LineWidth', 1.5);
 
         legend_entries{end+1} = ['Simulated (' Mod_Types{idx} ')'];
     end
@@ -667,12 +746,12 @@ function plot_BER_vs_SNR_all(BER_all, SNR_Range, Mod_Types)
 
     for idx = 1:length(Mod_Types)
         color = colors(mod(idx-1, length(colors)) + 1);
-        marker = markers(mod(idx-1, length(markers)) + 1);
+        %marker = markers(mod(idx-1, length(markers)) + 1);
 
         % Simulated
         semilogy(SNR_Range, BER_all(:, idx), ...
-                 [color '-' marker], ...
-                 'LineWidth', 1.5, 'MarkerSize', 6);
+                 [color], ...
+                 'LineWidth', 1.5);
         legend_entries{end+1} = ['Simulated (' Mod_Types{idx} ')'];
 
         % Theoretical
@@ -738,4 +817,128 @@ function displayBitComparison(Tx_bits, Rx_bits, bit_errors, BER, bits_per_group)
     fprintf('Bit errors: %d\n', bit_errors);
     fprintf('BER: %.2e\n', BER);
     
+end
+
+function [tx_out] = BFSK_BB(bits_Num, N_realization, Tb, Eb, samples_per_bit, sampled_data, t)
+% BFSK_BB Generate baseband BFSK time-domain signal
+%
+% Inputs:
+%   bits_Num       - Number of bits per realization
+%   N_realization  - Number of realizations
+%   Tb             - Bit duration in seconds
+%   Eb             - Energy per bit
+%
+% Output:
+%   tx_out         - Baseband BFSK output signal (N_realization x 7*(bits_Num+1))
+
+    % === Derived Parameters ===
+    total_samples = samples_per_bit * (bits_Num + 1); % Total samples per realization
+    
+    % === Initialize Output Signal ===
+    tx_out = zeros(N_realization, total_samples);
+    
+    % === Map to Baseband BFSK Signal ===
+    for i = 1:N_realization
+        for j = 1:samples_per_bit:total_samples
+            if sampled_data(i, j) == 0
+                tx_out(i, j:j+samples_per_bit-1) = sqrt(2 * Eb / Tb);  % Non-coherent tone for 0
+            else
+                for k = 1:samples_per_bit
+                    tx_out(i, j + k - 1) = sqrt(2 * Eb / Tb) * ...
+                        (cos(2 * pi * t(k) / Tb) + 1i * sin(2 * pi * t(k) / Tb));
+                end
+            end
+        end
+    end
+end
+
+function [tx_with_delay] = apply_random_delay(tx_out, samples_per_bit)
+% APPLY_RANDOM_DELAY Applies random symbol-aligned delay to each realization
+%
+% Inputs:
+%   tx_out           - Original signal matrix (N_realization × total_samples)
+%   samples_per_bit  - Number of samples per bit (e.g., 7)
+%
+% Output:
+%   tx_with_delay    - Delayed signals, trimmed to same size (N_realization × trimmed_samples)
+
+    [N_realization, total_samples] = size(tx_out);
+    trimmed_samples = total_samples - samples_per_bit;
+    tx_with_delay = zeros(N_realization, trimmed_samples);
+
+    for i = 1:N_realization
+        r = randi([0 (samples_per_bit - 1)]);  % Random delay in samples
+        tx_with_delay(i, :) = tx_out(i, r + 1 : r + trimmed_samples);
+    end
+end
+
+function BFSK_autocorr = compute_BFSK_autocorrelation(tx_with_delay)
+% COMPUTE_BFSK_AUTOCORRELATION Computes autocorrelation of delayed BFSK signals
+% centered at the middle sample.
+%
+% Input:
+%   tx_with_delay   - Matrix of delayed BFSK signals (N_realization × N_samples)
+%
+% Output:
+%   BFSK_autocorr   - Autocorrelation vector (1 × N_samples)
+
+    [~, N_samples] = size(tx_with_delay);
+    
+    % Ensure N_samples is even for symmetric range
+    if mod(N_samples, 2) ~= 0
+        error('N_samples must be even for symmetric autocorrelation.');
+    end
+    
+    BFSK_autocorr = zeros(1, N_samples);
+    center_idx = N_samples / 2;
+
+    for j = -center_idx+1 : center_idx
+        i = j + center_idx;
+        if i >= 1 && i <= N_samples
+            p = conj(tx_with_delay(:, center_idx)) .* tx_with_delay(:, i);
+            BFSK_autocorr(i) = sum(p) / length(p);
+        end
+    end
+end
+
+function draw_autocorr(Rx_BFSK)
+% DRAW_AUTOCORR Plots the magnitude of the symmetric autocorrelation
+%
+% Input:
+%   Rx_BFSK - 1 × N vector of autocorrelation values (only one-sided)
+
+    N = length(Rx_BFSK);
+    tau = (-N+1):(N-1);
+    
+    % plot the graph
+    figure('Name', 'Autocorrelation');
+    plot(tau-N/2, abs(fliplr([Rx_BFSK Rx_BFSK(2:end)])), 'LineWidth', 1.5);
+    xlabel('\tau');
+    ylabel('Autocorrelation Magnitude');
+    xlim([-50 50]);
+    title('BFSK Autocorrelation');
+    grid on;
+end
+
+function draw_psd(f_normalized, BFSK_PSD, PSD_theoretical)
+% DRAW_PSD Plots the practical and theoretical PSD of a BFSK signal
+%
+% Inputs:
+%   f_normalized     - Frequency axis (normalized by bit rate)
+%   BFSK_PSD         - Practical PSD values (1 × N)
+%   PSD_theoretical  - Theoretical PSD values (1 × N), aligned with f_normalized
+
+    figure('Name', 'PSD');
+    plot(f_normalized, abs(BFSK_PSD) / 100, 'b', 'LineWidth', 1);   % Practical PSD
+    hold on;
+    plot(f_normalized + 0.5, abs(PSD_theoretical), 'r--', 'LineWidth', 1); % Shifted theoretical PSD
+    hold off;
+
+    xlabel('Normalized Frequency, fTb');
+    ylabel('S(f)');
+    title('BFSK PSD');
+    xlim([-1.5 1.5]);
+    ylim([0 2]);
+    legend('Practical', 'Theoretical');
+    grid on;
 end
