@@ -5,8 +5,7 @@ clear; clc; close all;
 % Simulation Parameters
 % ========================
 bits_Num = 6 * 2^15;                                  % Number of bits to transmit 
-%mod_types = {'BPSK', 'QPSK', 'QPSKNG', '8PSK', '16-QAM', 'BFSK'}; % Cell array of modulation types
-mod_types = {'BFSK'};
+mod_types = {'BPSK', 'QPSK', 'QPSKNG', '8PSK', '16-QAM', 'BFSK'}; % Cell array of modulation types
 SNR_db_range = -4:1:16;
 
 % Generate random bits (same for all modulations for fair comparison)
@@ -90,7 +89,7 @@ drawNoisyConstellations(rx_symbols_all, SNR_db_range, mod_types);
 plot_BER_vs_SNR(BER_all, SNR_db_range, mod_types);
 
 %   Graph BER grey vs not grey QPSK (task 2)
-%plot_BER_vs_SNR_dual(BER_all(2, :), BER_all(3, :), SNR_db_range, mod_types(2:3));
+plot_BER_vs_SNR_dual(BER_all(2, :), BER_all(3, :), SNR_db_range, mod_types(2:3));
 
 %   Graph BER Vs SNR (task 1)
 plot_BER_vs_SNR_all(BER_all, SNR_db_range, mod_types);
